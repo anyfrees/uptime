@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self'; connect-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self'; connect-src 'none';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>主动可用性监测平台</title>
     <style>
@@ -52,7 +52,7 @@
         }
         /* 应用 Logo 容器样式 */
         #appLogoContainer { 
-            cursor: default !important; /* 确保鼠标悬停时为默认指针 */
+            cursor: default !important; 
             width: 48px; 
             height: 48px;
             display: flex;
@@ -64,8 +64,8 @@
             background-repeat: no-repeat;
             overflow: hidden; 
         }
-        #appLogoLetter { /* 用于显示字母 P */
-            font-size: 1.75rem; /* text-xl */
+        #appLogoLetter { 
+            font-size: 1.75rem; 
             font-weight: bold;
             color: white;
         }
@@ -106,7 +106,6 @@
             color: white;
         }
 
-        /* 订阅源列表项样式 */
         .source-url-item {
             display: flex;
             justify-content: space-between;
@@ -128,11 +127,9 @@
         .delete-source-btn:hover {
             background-color: #dc2626; 
         }
-        /* Webhook 列表项激活状态 */
         .webhook-list-item.active {
             background-color: #374151; 
         }
-        /* Webhook 状态指示器 */
         .webhook-list-item .webhook-status-indicator {
             width: 8px;
             height: 8px;
@@ -143,12 +140,10 @@
         .webhook-status-indicator.enabled { background-color: #38A169; }
         .webhook-status-indicator.disabled { background-color: #9ca3af; }
 
-        /* Webhook 表单显隐控制 */
         .form-fields-visible #webhookDetailPlaceholder { display: none; }
         .form-fields-hidden #webhookFormFields { display: none; }
         .form-fields-hidden #webhookFormTitle { display: none; }
 
-        /* 模态对话框样式 (用于修改应用标题，但此功能已改为修改图标) */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -168,32 +163,99 @@
             opacity: 1;
             visibility: visible;
         }
-        .modal-content {
+        .confirm-modal-overlay { 
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000; 
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease-in-out, visibility 0s linear 0.2s;
+        }
+        .confirm-modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .modal-content, .confirm-modal-content { 
             background-color: #2d3748; 
-            padding: 2rem; 
-            border-radius: 0.75rem; 
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            padding: 1.5rem; 
+            border-radius: 0.5rem; 
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
             width: 90%;
-            max-width: 400px; 
-            transform: scale(0.95);
-            transition: transform 0.3s ease;
+            max-width: 420px; 
+            transform: translateY(-20px) scale(0.95);
+            transition: transform 0.2s ease-in-out, opacity 0.2s ease-in-out;
+            opacity: 0;
+            border: 1px solid #4a5568; 
         }
-        .modal-overlay.active .modal-content {
-            transform: scale(1);
+        .modal-overlay.active .modal-content,
+        .confirm-modal-overlay.active .confirm-modal-content {
+            transform: translateY(0) scale(1);
+            opacity: 1;
         }
+        .confirm-modal-title {
+            font-size: 1.25rem; 
+            font-weight: 600; 
+            color: #e2e8f0; 
+            margin-bottom: 0.75rem; 
+        }
+        .confirm-modal-message {
+            font-size: 0.95rem; 
+            color: #cbd5e1; 
+            margin-bottom: 1.5rem; 
+            line-height: 1.6;
+            word-wrap: break-word; 
+        }
+        .confirm-modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem; 
+        }
+        .confirm-modal-button {
+            padding: 0.6rem 1.2rem; 
+            border-radius: 0.375rem; 
+            font-weight: 500; 
+            transition: background-color 0.2s ease, box-shadow 0.2s ease;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .confirm-modal-button-ok {
+            background-color: #3b82f6; 
+            color: white;
+        }
+        .confirm-modal-button-ok:hover {
+            background-color: #2563eb; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .confirm-modal-button-cancel {
+            background-color: #4b5563; 
+            color: #e2e8f0; 
+        }
+        .confirm-modal-button-cancel:hover {
+            background-color: #6b7280; 
+        }
+
         /* 关于页面特定样式 */
         #view-about .about-link {
-            color: #60a5fa; /* text-blue-400 */
+            color: #60a5fa; 
             text-decoration: none;
             transition: color 0.2s ease-in-out;
         }
         #view-about .about-link:hover {
-            color: #3b82f6; /* text-blue-500 */
+            color: #3b82f6; 
             text-decoration: underline;
         }
 
     </style>
-    <script src="https://cdn.tailwindcss.com"></script> 
+    <link rel="stylesheet" href="./tailwind.min.css">
 </head>
 <body class="flex h-screen antialiased">
     <div id="appLoader">正在加载应用...</div>
@@ -435,10 +497,10 @@
                 <h2 class="text-2xl font-semibold mb-6 text-white">关于本程序</h2>
                 <div class="glassmorphism p-8 rounded-xl max-w-2xl mx-auto space-y-6">
                     <div>
-                        <h3 class="text-xl font-semibold text-gray-100 mb-2">主动可用性拨测平台客户端</h3>
+                        <h3 class="text-xl font-semibold text-gray-100 mb-2">主动可用性监测平台</h3>
                         <p class="text-gray-300 leading-relaxed">
-                            本程序旨在提供一个简单易用的界面，用于监控本地设备与网络节点的可用性，并在本地设备与拨测节点状态发生变化时通过多种方式（如 Webhook）发送通知。也可以本地通过拨测监控远端http(s)服务的可用性。
-                            您可以添加订阅源来批量导入监控节点，自定义检查频率、通知规则等。通过主动发送心跳包给拨测平台，拨测平台定时接收拨测包保活，以知晓本地网络是否与外部网络正常通畅。
+                            本程序旨在提供一个简单易用的界面，用于监控本地设备与网络节点（URL）的可用性，并在本地设备与监控节点状态发生变化时通过多种方式（如 Webhook）发送通知。
+                            您可以添加订阅源来批量导入监控节点，自定义检查频率、通知规则等。通过主动发送心跳包已知晓本地网络是否与外部网络正常通畅。
                         </p>
                     </div>
                     <div>
@@ -473,6 +535,17 @@
     </main>
 
     <div id="toastContainer" class="fixed bottom-5 right-5 space-y-3 z-[100]">
+    </div>
+    
+    <div id="customConfirmModalOverlay" class="confirm-modal-overlay">
+        <div class="confirm-modal-content">
+            <h3 id="customConfirmTitle" class="confirm-modal-title">请确认</h3> 
+            <p id="customConfirmMessage" class="confirm-modal-message">您确定要执行此操作吗？</p>
+            <div class="confirm-modal-buttons">
+                <button id="customConfirmCancelBtn" class="confirm-modal-button confirm-modal-button-cancel">取消</button>
+                <button id="customConfirmOkBtn" class="confirm-modal-button confirm-modal-button-ok">确定</button>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>
