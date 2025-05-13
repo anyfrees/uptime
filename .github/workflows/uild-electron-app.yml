@@ -2,85 +2,73 @@
 
 name: Build Electron App
 
-# 控制工作流程何时运行
 on:
   push:
-    branches: [ main ] # 当 main 分支有推送时触发
+    branches: [ main ]
   pull_request:
-    branches: [ main ] # 当向 main 分支发起 pull request 时触发 (可选)
+    branches: [ main ]
   release:
-    types: [created]    # 当在 GitHub 上创建新的 Release 时触发
+    types: [created]
 
 jobs:
   build:
-    # 使用矩阵策略为多个平台构建
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest] # 构建平台
-        # 可选：指定 Node.js 版本
-        # node-version: [18.x, 20.x] 
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # node-version: [18.x, 20.x] # 可选指定 Node.js 版本
 
-    runs-on: ${{ matrix.os }} # 在指定的操作系统上运行
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4 # 检出您的代码仓库
+      uses: actions/checkout@v4
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 18.x # 或者您项目中使用的 Node.js 版本
+        node-version: 18.x # 建议使用您项目兼容的 LTS 版本
 
     - name: Install dependencies (npm)
-      run: npm install
+      run: npm ci # 使用 npm ci 通常比 npm install 更快且更可靠
       # 如果您使用 yarn，请替换为:
       # run: yarn install --frozen-lockfile
 
-    - name: Install Windows build tools (Windows only)
-      if: matrix.os == 'windows-latest'
-      run: npm install --global windows-build-tools --vs2019 # 有时需要，特别是涉及原生模块时
+    # 移除了 "Install Windows build tools" 步骤，因为它已弃用并导致错误。
+    # electron-builder 会自行处理其依赖（如 winCodeSign）。
+    # 如果 winCodeSign 解压时仍然因为符号链接权限问题失败，
+    # 这可能是 electron-builder 或其依赖的 winCodeSign 包本身的问题，
+    # 在 Windows runner 上的处理方式。
+    # 可以关注 electron-builder 的 issue tracker 获取相关问题的解决方案。
 
-    # 构建应用程序
-    # electron-builder 会根据当前运行的操作系统 (matrix.os) 和 package.json 中的配置来构建相应的包
     - name: Build application
-      run: npm run dist # 这个脚本应在 package.json 中定义为 "electron-builder"
-      # 或者更明确地指定平台:
-      # if: matrix.os == 'windows-latest'
-      #   run: npm run dist:win # 假设您在 package.json 中定义了 "dist:win": "electron-builder --win"
-      # if: matrix.os == 'macos-latest'
-      #   run: npm run dist:mac   # 假设 "dist:mac": "electron-builder --mac"
-      # if: matrix.os == 'ubuntu-latest'
-      #   run: npm run dist:linux # 假设 "dist:linux": "electron-builder --linux"
+      run: npm run dist
       env:
-        # GitHub Actions 提供的用于发布到 GitHub Releases 的 token
-        # 仅在 on: release: types: [created] 事件触发时，electron-builder 才会尝试发布
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # 如果您的构建或发布需要其他环境变量，可以在这里设置
+        # CSC_LINK: ${{ secrets.CSC_LINK }} # 用于代码签名的证书 (Base64)
+        # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }} # 证书密码
+        # 如果您设置了代码签名，请取消注释上面的行并确保在 GitHub Secrets 中配置了这些变量。
 
-    # 上传构建产物 (可选, 如果不直接发布到 Release)
-    # 这会将构建好的文件作为 workflow artifact 上传，方便下载和测试
     - name: Upload Windows Artifact
-      if: matrix.os == 'windows-latest' && success() # 仅在构建成功时上传
+      if: matrix.os == 'windows-latest' && success()
       uses: actions/upload-artifact@v4
       with:
-        name: proactive-monitor-windows-${{ github.sha }} # 产物名称
-        path: dist/*.exe # Windows 安装程序路径 (根据您的 productName 和 NSIS 配置)
-        # path: dist/*.zip # 如果您也构建了 zip 包
+        name: proactive-monitor-windows-${{ github.run_id }}-${{ github.sha }}
+        path: dist/*.exe 
+        # path: dist/win-unpacked/ # 如果需要上传未打包的目录
 
     - name: Upload macOS Artifact
       if: matrix.os == 'macos-latest' && success()
       uses: actions/upload-artifact@v4
       with:
-        name: proactive-monitor-macos-${{ github.sha }}
-        path: dist/*.dmg # macOS DMG 文件路径
+        name: proactive-monitor-macos-${{ github.run_id }}-${{ github.sha }}
+        path: dist/*.dmg
         # path: dist/*.zip
 
     - name: Upload Linux Artifact
       if: matrix.os == 'ubuntu-latest' && success()
       uses: actions/upload-artifact@v4
       with:
-        name: proactive-monitor-linux-${{ github.sha }}
-        path: dist/*.AppImage # Linux AppImage 路径
+        name: proactive-monitor-linux-${{ github.run_id }}-${{ github.sha }}
+        path: dist/*.AppImage
         # path: dist/*.deb
         # path: dist/*.rpm
-        # path: dist/*.tar.gz
