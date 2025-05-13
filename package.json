@@ -1,0 +1,91 @@
+{
+  "name": "Uptime",
+  "version": "1.0.0",
+  "description": "主动可用性拨测平台客户端",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "Electron",
+    "monitor",
+    "availability",
+    "webhook"
+  ],
+  "author": "Cheng Kai",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^36.2.0",
+    "electron-builder": "^24.0.0" 
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "node-fetch": "^2.6.7",
+    "chardet": "^1.5.0",
+    "uuid": "^9.0.0",
+    "electron-log": "^5.0.0-beta.16",
+    "auto-launch": "^5.0.6"
+  },
+  "build": {
+    "appId": "com.0vk.proactivemonitor",
+    "productName": "主动可用性拨测平台客户端",
+    "directories": {
+      "output": "dist" 
+    },
+    "files": [ 
+      "main.js",
+      "preload.js",
+      "ui/**/*",
+      "node_modules/**/*" 
+    ],
+    "win": { 
+      "icon": "ui/app_icon.ico",
+      "target": "nsis"
+    },
+    "mac": { 
+      "icon": "ui/app_icon.icns",
+      "category": "public.app-category.utilities", 
+      "target": [ 
+        "dmg", 
+        "zip"  
+      ]
+    },
+    "linux": { 
+      "icon": "ui/app_icon.png", 
+      "category": "Utility", 
+      "target": [ 
+        "AppImage", 
+        "deb",      
+        "rpm",      
+        "tar.gz"    
+      ],
+      "maintainer": "Cheng Kai <i@chengkai.vip>" 
+    },
+    "nsis": { 
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true, 
+      "createDesktopShortcut": true, 
+      "createStartMenuShortcut": true,
+      "installerIcon": "ui/app_icon.ico", 
+      "uninstallerIcon": "ui/app_icon.ico", 
+      "shortcutName": "主动可用性拨测平台客户端" 
+    },
+    "dmg": { 
+     "contents": [
+       {
+         "x": 410,
+         "y": 150,
+         "type": "link",
+         "path": "/Applications"
+       },
+       {
+         "x": 130,
+         "y": 150,
+         "type": "file"
+       }
+     ]
+   }
+  }
+}

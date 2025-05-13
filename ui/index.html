@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self'; connect-src 'none';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主动可用性监测平台</title>
+    <style>
+        /* 滚动条样式 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #2d3748; /* bg-gray-800 */ }
+        ::-webkit-scrollbar-thumb { background: #4a5568; /* bg-gray-600 */ border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #718096; /* bg-gray-500 */ }
+
+        /* 基础页面样式 */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            background-color: #1a202c; /* bg-gray-900 */
+            color: #e2e8f0; /* text-gray-200 */
+            overflow: hidden; /* 防止无边框窗口出现body滚动条 */
+            border: 1px solid #374151; /* 可选: 为无边框窗口添加细微边框 */
+            border-radius: 0.75rem; /* 可选: 无边框窗口的圆角 */
+        }
+        /* 毛玻璃效果 */
+        .glassmorphism {
+            background: rgba(42, 50, 69, 0.6); /* bg-gray-700 with opacity */
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px); /* Safari 兼容 */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.75rem; /* rounded-xl */
+        }
+        /* 侧边栏图标样式 */
+        .sidebar-icon {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .sidebar-icon:hover, .sidebar-icon.active {
+            background-color: #4A5568; /* bg-gray-600 */
+            color: #FFFFFF;
+        }
+        /* 状态颜色 */
+        .status-online { color: #38A169; /* text-green-600 */ }
+        .status-offline { color: #E53E3E; /* text-red-600 */ }
+        .status-pending { color: #ECC94B; /* text-yellow-400 */ }
+
+        /* 应用加载动画 */
+        #appLoader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #1a202c; /* bg-gray-900 */
+            display: flex; justify-content: center; align-items: center;
+            z-index: 9999; font-size: 1.5rem; color: #e2e8f0; /* text-gray-200 */
+        }
+        /* 应用 Logo 容器样式 */
+        #appLogoContainer { 
+            cursor: default !important; /* 确保鼠标悬停时为默认指针 */
+            width: 48px; 
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background-size: cover; 
+            background-position: center;
+            background-repeat: no-repeat;
+            overflow: hidden; 
+        }
+        #appLogoLetter { /* 用于显示字母 P */
+            font-size: 1.75rem; /* text-xl */
+            font-weight: bold;
+            color: white;
+        }
+
+
+        /* 自定义标题栏样式 */
+        #customTitleBar {
+            height: 48px; 
+            background-color: #2d3748; 
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-left: 1rem;
+            padding-right: 0.5rem;
+            width: 100%;
+            -webkit-app-region: drag; 
+            user-select: none; 
+        }
+        #customTitleBar .title-text {
+            color: #e2e8f0; 
+            font-weight: 600; 
+            font-size: 1.125rem; 
+        }
+        #customTitleBar .window-controls button {
+            -webkit-app-region: no-drag; 
+            padding: 0.5rem; 
+            margin-left: 0.25rem; 
+            border-radius: 0.375rem; 
+            transition: background-color 0.2s;
+            color: #9ca3af; 
+        }
+        #customTitleBar .window-controls button:hover {
+            background-color: #4b5563; 
+            color: #e5e7eb; 
+        }
+        #customTitleBar .window-controls button#customCloseBtn:hover {
+            background-color: #ef4444; 
+            color: white;
+        }
+
+        /* 订阅源列表项样式 */
+        .source-url-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem; 
+            border-bottom: 1px solid #374151; 
+        }
+        .source-url-item:last-child {
+            border-bottom: none;
+        }
+        .delete-source-btn {
+            background-color: #ef4444; 
+            color: white;
+            padding: 0.25rem 0.5rem; 
+            border-radius: 0.375rem; 
+            font-size: 0.75rem; 
+            line-height: 1rem;
+        }
+        .delete-source-btn:hover {
+            background-color: #dc2626; 
+        }
+        /* Webhook 列表项激活状态 */
+        .webhook-list-item.active {
+            background-color: #374151; 
+        }
+        /* Webhook 状态指示器 */
+        .webhook-list-item .webhook-status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .webhook-status-indicator.enabled { background-color: #38A169; }
+        .webhook-status-indicator.disabled { background-color: #9ca3af; }
+
+        /* Webhook 表单显隐控制 */
+        .form-fields-visible #webhookDetailPlaceholder { display: none; }
+        .form-fields-hidden #webhookFormFields { display: none; }
+        .form-fields-hidden #webhookFormTitle { display: none; }
+
+        /* 模态对话框样式 (用于修改应用标题，但此功能已改为修改图标) */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000; 
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background-color: #2d3748; 
+            padding: 2rem; 
+            border-radius: 0.75rem; 
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 400px; 
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+        /* 关于页面特定样式 */
+        #view-about .about-link {
+            color: #60a5fa; /* text-blue-400 */
+            text-decoration: none;
+            transition: color 0.2s ease-in-out;
+        }
+        #view-about .about-link:hover {
+            color: #3b82f6; /* text-blue-500 */
+            text-decoration: underline;
+        }
+
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script> 
+</head>
+<body class="flex h-screen antialiased">
+    <div id="appLoader">正在加载应用...</div>
+
+    <aside class="w-20 flex-shrink-0 bg-gray-800 p-4 flex flex-col items-center space-y-6">
+        <div id="appLogoContainer" class="bg-gradient-to-br from-blue-500 to-green-400 select-none">
+            <span id="appLogoLetter">P</span> 
+        </div>
+        <nav class="flex flex-col space-y-4">
+            <a href="#" id="nav-dashboard" class="sidebar-icon p-3 rounded-lg active" title="仪表盘">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+            </a>
+            <a href="#" id="nav-subscriptions" class="sidebar-icon p-3 rounded-lg" title="订阅管理">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+            </a>
+            <a href="#" id="nav-notifications" class="sidebar-icon p-3 rounded-lg" title="通知设置">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+            </a>
+            <a href="#" id="nav-logs" class="sidebar-icon p-3 rounded-lg" title="应用日志">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </a>
+            <a href="#" id="nav-settings" class="sidebar-icon p-3 rounded-lg" title="应用设置">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            </a>
+            <a href="#" id="nav-about" class="sidebar-icon p-3 rounded-lg" title="关于">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </a>
+        </nav>
+        <div id="quitAppButtonSidebar" class="mt-auto p-3 rounded-lg hover:bg-red-700 cursor-pointer" title="退出应用 (从侧边栏)">
+             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col overflow-hidden bg-gray-900 text-gray-200">
+        <header id="customTitleBar">
+            <h1 id="appTitleDisplay" class="title-text truncate">主动可用性监测平台</h1>
+            <div class="flex items-center">
+                <span id="nextCheckTime" class="text-sm text-gray-400 mr-4" style="-webkit-app-region: no-drag;"></span>
+                <div class="window-controls flex">
+                    <button id="customMinimizeBtn" title="最小化">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4" />
+                        </svg>
+                    </button>
+                    <button id="customCloseBtn" title="关闭 (最小化到托盘)">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+        
+        <div class="flex-1 p-6 overflow-y-auto">
+            <section id="view-dashboard" class="view-content">
+                 <h2 class="text-2xl font-semibold mb-6 text-white">仪表盘</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <div class="glassmorphism p-6 rounded-xl"><h3 class="text-sm font-medium text-gray-400">总订阅节点</h3><p id="stats-total-nodes" class="text-3xl font-bold text-white mt-1">0</p></div>
+                    <div class="glassmorphism p-6 rounded-xl"><h3 class="text-sm font-medium text-gray-400">在线节点</h3><p id="stats-online-nodes" class="text-3xl font-bold text-green-400 mt-1">0</p></div>
+                    <div class="glassmorphism p-6 rounded-xl"><h3 class="text-sm font-medium text-gray-400">离线/错误</h3><p id="stats-offline-nodes" class="text-3xl font-bold text-red-400 mt-1">0</p></div>
+                    <div class="glassmorphism p-6 rounded-xl"><h3 class="text-sm font-medium text-gray-400">待检查</h3><p id="stats-pending-nodes" class="text-3xl font-bold text-yellow-400 mt-1">0</p></div>
+                </div>
+                 <div class="glassmorphism p-6 rounded-xl">
+                    <h3 class="text-lg font-semibold mb-3 text-white">快速操作</h3>
+                    <button id="manualCheckAllButtonDashboard" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150">立即检查所有节点</button>
+                </div>
+            </section>
+            <section id="view-subscriptions" class="view-content hidden">
+                <h2 class="text-2xl font-semibold mb-6 text-white">订阅管理</h2>
+                <div class="glassmorphism p-6 rounded-xl mb-6">
+                    <h3 class="text-lg font-semibold mb-3 text-white">添加新订阅源</h3>
+                    <div class="flex items-center space-x-3">
+                        <input type="url" id="newSubUrl" placeholder="输入订阅链接地址" class="flex-grow p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-gray-400 config-setting-input">
+                        <button id="addSubUrlButton" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-150">添加源</button>
+                        <button id="refreshSubFromSourceButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-150" title="从所有已保存的源URL刷新节点列表">刷新所有源</button>
+                    </div>
+                </div>
+                <div class="glassmorphism p-6 rounded-xl mb-6">
+                    <h3 class="text-lg font-semibold mb-3 text-white">已添加的订阅源</h3>
+                    <div id="subscriptionSourcesList" class="max-h-48 overflow-y-auto bg-gray-700/30 p-3 rounded-md"></div>
+                     <p id="noSubscriptionSourcesMessage" class="text-center py-4 text-gray-400 hidden">暂无已添加的订阅源。</p>
+                </div>
+                <div class="glassmorphism p-6 rounded-xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-white">主动拨测地址列表</h3>
+                        <button id="manualCheckAllButtonSubs" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition duration-150">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-1 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m-15.357-2a8.001 8.001 0 0115.357-2m0 0H15" /></svg>
+                            全部检查
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto max-h-[calc(100vh-20rem-250px)]">
+                        <table class="min-w-full divide-y divide-gray-700">
+                            <thead class="bg-gray-700/50 sticky top-0 z-10"><tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">名称</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">URL</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">状态</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">上次检查</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">操作</th></tr></thead>
+                            <tbody id="subscriptionList" class="bg-gray-800/30 divide-y divide-gray-700"></tbody>
+                        </table>
+                    </div>
+                     <p id="noSubscriptionsMessage" class="text-center py-8 text-gray-400 hidden">暂无订阅节点。</p>
+                </div>
+            </section>
+            <section id="view-notifications" class="view-content hidden">
+                 <h2 class="text-2xl font-semibold mb-6 text-white">通知设置</h2>
+                <div class="flex flex-col md:flex-row gap-6 h-[calc(100vh-10rem-48px)] md:h-[calc(100vh-12rem-48px)]"> 
+                    <div class="w-full md:w-1/3 lg:w-1/4 glassmorphism p-4 rounded-xl flex flex-col">
+                        <button id="createNewWebhookBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 px-4 rounded-lg mb-4 transition duration-150 flex items-center justify-center shadow-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            添加新 Webhook
+                        </button>
+                        <div id="webhookList" class="flex-grow overflow-y-auto space-y-2 pr-1">
+                        </div>
+                        <p id="noWebhooksMessageAside" class="text-center py-4 text-gray-400 hidden mt-auto">暂无配置。</p>
+                    </div>
+                    <div id="webhookDetailContainer" class="w-full md:w-2/3 lg:w-3/4 glassmorphism p-6 rounded-xl overflow-y-auto form-fields-hidden">
+                        <form id="webhookForm">
+                            <input type="hidden" id="webhookId">
+                            <h3 id="webhookFormTitle" class="text-xl font-semibold mb-6 text-white">Webhook 详情</h3>
+                            <div id="webhookFormFields" class="space-y-5">
+                                <div>
+                                    <label for="webhookName" class="block text-sm font-medium text-gray-300 mb-1">名称 <span class="text-red-500">*</span></label>
+                                    <input type="text" id="webhookName" placeholder="例如：团队告警、运维机器人" required class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-gray-400">
+                                </div>
+                                <div>
+                                    <label for="webhookType" class="block text-sm font-medium text-gray-300 mb-1">类型 <span class="text-red-500">*</span></label>
+                                    <select id="webhookType" required class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white">
+                                        <option value="custom">自定义</option>
+                                        <option value="wework">企业微信</option>
+                                        <option value="dingtalk">钉钉</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="webhookUrl" class="block text-sm font-medium text-gray-300 mb-1">Webhook URL <span class="text-red-500">*</span></label>
+                                    <input type="url" id="webhookUrl" placeholder="输入完整的 Webhook URL" required class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-gray-400">
+                                </div>
+                                <div id="customWebhookPayloadContainer" class="hidden">
+                                    <label for="customWebhookPayload" class="block text-sm font-medium text-gray-300 mb-1">自定义 Payload 模板 (JSON)</label>
+                                    <textarea id="customWebhookPayload" rows="4" placeholder='{"text": "{message}", "nodeName": "{nodeName}", "nodeUrl": "{nodeUrl}", "status": "{nodeStatus}", "appName": "{appName}", "eventType": "{eventType}" }' class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-gray-400 font-mono text-sm"></textarea>
+                                    <p class="text-xs text-gray-400 mt-1">可用占位符: {message}, {nodeName}, {nodeUrl}, {nodeStatus}, {appName}, {eventType}, {timestamp}, {lastChecked}</p>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5">
+                                    <div>
+                                        <label for="webhookRenotificationInterval" class="block text-sm font-medium text-gray-300 mb-1">重复通知间隔 (分钟)</label>
+                                        <input type="number" id="webhookRenotificationInterval" min="0" placeholder="例如 60 (0 禁用)" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white">
+                                        <p class="text-xs text-gray-400 mt-1">0 表示此 Webhook 不发送重复通知。</p>
+                                    </div>
+                                    <div class="flex items-center pt-2 sm:pt-7 space-x-6">
+                                        <div class="flex items-center">
+                                            <input id="webhookEnabled" type="checkbox" checked class="h-5 w-5 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-gray-800">
+                                            <label for="webhookEnabled" class="ml-2 block text-sm text-gray-300">启用</label>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <input id="webhookNotifyOnRecovery" type="checkbox" checked class="h-5 w-5 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-gray-800">
+                                            <label for="webhookNotifyOnRecovery" class="ml-2 block text-sm text-gray-300">恢复时通知</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-6 pt-6 border-t border-gray-700 flex flex-col sm:flex-row justify-end items-center space-y-3 sm:space-y-0 sm:space-x-3">
+                                    <button type="button" id="webhookTestButton" class="w-full sm:w-auto order-first sm:order-none bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-semibold py-2.5 px-5 rounded-lg transition duration-150 shadow-md">测试此配置</button>
+                                    <button type="button" id="webhookDeleteButton" class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-5 rounded-lg transition duration-150 shadow-md hidden">删除</button>
+                                    <button type="submit" id="webhookSaveButton" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-lg transition duration-150 shadow-md">保存更改</button>
+                                </div>
+                            </div>
+                            <div id="webhookDetailPlaceholder" class="text-center py-10 text-gray-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                <p class="mt-3 text-sm">请从左侧选择一个 Webhook 查看其详情，<br>或点击 “<span class="text-green-400 font-medium">添加新 Webhook</span>” 进行创建。</p>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+            <section id="view-logs" class="view-content hidden">
+                <h2 class="text-2xl font-semibold mb-6 text-white">应用日志</h2>
+                <div class="glassmorphism p-1 rounded-xl"> 
+                    <div id="logContainer" class="w-full h-[calc(100vh-12rem-50px-48px)] bg-gray-800/50 p-4 rounded-lg overflow-y-auto text-sm font-mono whitespace-pre-wrap">
+                    </div>
+                </div>
+            </section>
+            <section id="view-settings" class="view-content hidden">
+                 <h2 class="text-2xl font-semibold mb-6 text-white">应用设置</h2>
+                <div class="glassmorphism p-8 rounded-xl max-w-2xl mx-auto">
+                    <div class="space-y-6">
+                        <div>
+                            <label for="appGlobalTitleInput" class="block text-sm font-medium text-gray-300 mb-1">应用标题</label>
+                            <input type="text" id="appGlobalTitleInput" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-gray-400 config-setting-input">
+                        </div>
+                        <div>
+                            <label for="urlCheckInterval" class="block text-sm font-medium text-gray-300 mb-1">节点检查间隔</label>
+                            <div class="flex items-center space-x-2">
+                                <input type="number" id="urlCheckInterval" min="1" value="30" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white config-setting-input">
+                                <select id="urlCheckIntervalUnit" class="p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white config-setting-input">
+                                    <option value="seconds">秒</option>
+                                    <option value="minutes" selected>分钟</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="autoUpdateSourcesInterval" class="block text-sm font-medium text-gray-300 mb-1">自动更新所有订阅源间隔 (分钟)</label>
+                            <input type="number" id="autoUpdateSourcesInterval" min="1" value="60" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white config-setting-input">
+                        </div>
+                        <div>
+                            <label for="faultConfirmAttempts" class="block text-sm font-medium text-gray-300 mb-1">故障确认尝试次数</label>
+                            <input type="number" id="faultConfirmAttempts" min="0" value="2" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white config-setting-input">
+                            <p class="text-xs text-gray-400 mt-1">首次检测失败后，额外重试的次数 (0 表示不重试)。</p>
+                        </div>
+                        <div>
+                            <label for="faultConfirmIntervalSeconds" class="block text-sm font-medium text-gray-300 mb-1">故障确认重试间隔 (秒)</label>
+                            <input type="number" id="faultConfirmIntervalSeconds" min="1" value="10" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white config-setting-input">
+                            <p class="text-xs text-gray-400 mt-1">每次故障确认重试之间的等待时间。</p>
+                        </div>
+                        <div>
+                            <label for="globalFaultRenotificationInterval" class="block text-sm font-medium text-gray-300 mb-1">全局故障重复通知间隔 (分钟)</label>
+                            <input type="number" id="globalFaultRenotificationInterval" min="0" value="60" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white config-setting-input">
+                             <p class="text-xs text-gray-400 mt-1">0 表示禁用全局重复通知。单个 Webhook 可覆盖此设置。</p>
+                        </div>
+                         <div class="flex items-center">
+                            <input id="globalNotifyOnRecovery" type="checkbox" class="h-5 w-5 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-gray-800 config-setting-input">
+                            <label for="globalNotifyOnRecovery" class="ml-3 block text-sm text-gray-300">全局启用恢复通知</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input id="startWithWindows" type="checkbox" class="h-5 w-5 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-gray-800 config-setting-input">
+                            <label for="startWithWindows" class="ml-3 block text-sm text-gray-300">开机启动</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input id="startMinimized" type="checkbox" class="h-5 w-5 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-gray-800 config-setting-input">
+                            <label for="startMinimized" class="ml-3 block text-sm text-gray-300">启动时最小化到托盘</label>
+                        </div>
+                         <div class="mt-6 pt-6 border-t border-gray-700 flex justify-end">
+                            <button id="saveGeneralSettingsButton" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-5 rounded-lg transition duration-150 shadow-md">保存常规设置</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="view-about" class="view-content hidden">
+                <h2 class="text-2xl font-semibold mb-6 text-white">关于本程序</h2>
+                <div class="glassmorphism p-8 rounded-xl max-w-2xl mx-auto space-y-6">
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-100 mb-2">主动可用性拨测平台客户端</h3>
+                        <p class="text-gray-300 leading-relaxed">
+                            本程序旨在提供一个简单易用的界面，用于监控本地设备与网络节点的可用性，并在本地设备与拨测节点状态发生变化时通过多种方式（如 Webhook）发送通知。也可以本地通过拨测监控远端http(s)服务的可用性。
+                            您可以添加订阅源来批量导入监控节点，自定义检查频率、通知规则等。通过主动发送心跳包给拨测平台，拨测平台定时接收拨测包保活，以知晓本地网络是否与外部网络正常通畅。
+                        </p>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-100 mb-2">开发者信息</h3>
+                        <ul class="text-gray-300 space-y-2">
+                            <li><strong>开发者:</strong> chengkai</li>
+                            <li>
+                                <strong>邮箱:</strong> 
+                                <a href="mailto:i@chengkai.vip" id="emailLink" class="about-link">i@chengkai.vip</a>
+                            </li>
+                            <li>
+                                <strong>博客:</strong> 
+                                <a href="https://www.0vk.com" id="blogLink" target="_blank" rel="noopener noreferrer" class="about-link">https://www.0vk.com</a>
+                            </li>
+                        </ul>
+                    </div>
+                     <div>
+                        <h3 class="text-xl font-semibold text-gray-100 mb-2">版本信息</h3>
+                        <p class="text-gray-300">
+                            应用版本: <span id="appVersionInfo">加载中...</span>
+                        </p>
+                        <p class="text-gray-300">
+                            Electron版本: <span id="electronVersionInfo">加载中...</span>
+                        </p>
+                        <p class="text-gray-300">
+                            Node.js版本: <span id="nodeVersionInfo">加载中...</span>
+                        </p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="toastContainer" class="fixed bottom-5 right-5 space-y-3 z-[100]">
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
