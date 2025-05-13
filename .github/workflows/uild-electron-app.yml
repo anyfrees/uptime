@@ -1,12 +1,12 @@
 # .github/workflows/build-and-publish.yml
 
-name: Build and Publish 拨测客户端
+name: Build and 拨测客户端
 
 on:
   push:
-    branches: [ main ] # 每次推送到 main 分支时构建，并上传为 artifact
+    branches: [ main ] 
   release:
-    types: [published] # 当在 GitHub 上发布新的 Release 时触发构建并上传到 Release Assets
+    types: [published] 
 
 jobs:
   build-and-release:
@@ -28,31 +28,34 @@ jobs:
     - name: Install dependencies (npm)
       run: npm ci 
 
-    # 构建应用程序
-    # electron-builder 会在 on:release 事件时自动尝试发布到 GitHub Releases
+    # 新增：为 Linux 构建安装必要的依赖
+    - name: Install Linux build dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y dpkg fakeroot rpm # rpmbuild 通常随 rpm 包一起安装
+
     - name: Build application
-      id: build_app # 给这个步骤一个 id，方便后续引用其输出
-      run: npm run dist # 这个脚本应在 package.json 中定义为 "electron-builder"
+      id: build_app 
+      run: npm run dist 
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # 如果需要代码签名，在这里配置 CSC_LINK 和 CSC_KEY_PASSWORD
-        # CSC_LINK: ${{ secrets.CSC_LINK }}
-        # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        # CSC_LINK: ${{ secrets.CSC_LINK }} 
+        # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }} 
 
-    # 上传构建产物 (Workflow Artifacts) - 总是执行，用于测试或存档
     - name: Upload Windows Artifact (Installer)
       if: matrix.os == 'windows-latest' && success()
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Windows-Installer-${{ github.sha }}
-        path: dist/*Setup*.exe # 匹配 NSIS 安装程序
+        path: dist/*Setup*.exe 
 
     - name: Upload Windows Artifact (Portable)
-      if: matrix.os == 'windows-latest' && success() && steps.build_app.outputs.artifactName && contains(steps.build_app.outputs.artifactName, 'portable') # 假设 portable 会有特定文件名或输出
+      if: matrix.os == 'windows-latest' && success()
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Windows-Portable-${{ github.sha }}
-        path: dist/*portable*.exe # 或更精确的 portable 文件名
+        path: dist/*portable*.exe 
 
     - name: Upload macOS Artifact (DMG)
       if: matrix.os == 'macos-latest' && success()
@@ -62,11 +65,11 @@ jobs:
         path: dist/*.dmg
 
     - name: Upload macOS Artifact (ZIP)
-      if: matrix.os == 'macos-latest' && success() && steps.build_app.outputs.artifactName && contains(steps.build_app.outputs.artifactName, '.zip')
+      if: matrix.os == 'macos-latest' && success()
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-macOS-zip-${{ github.sha }}
-        path: dist/*.zip
+        path: dist/*.zip # 假设您的 mac target 也包含 zip
 
     - name: Upload Linux Artifact (AppImage)
       if: matrix.os == 'ubuntu-latest' && success()
@@ -76,14 +79,14 @@ jobs:
         path: dist/*.AppImage
 
     - name: Upload Linux Artifact (deb)
-      if: matrix.os == 'ubuntu-latest' && success() && steps.build_app.outputs.artifactName && contains(steps.build_app.outputs.artifactName, '.deb')
+      if: matrix.os == 'ubuntu-latest' && success()
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Linux-deb-${{ github.sha }}
         path: dist/*.deb
         
     - name: Upload Linux Artifact (rpm)
-      if: matrix.os == 'ubuntu-latest' && success() && steps.build_app.outputs.artifactName && contains(steps.build_app.outputs.artifactName, '.rpm')
+      if: matrix.os == 'ubuntu-latest' && success()
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Linux-rpm-${{ github.sha }}
