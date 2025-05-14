@@ -112,6 +112,14 @@
       ],
       "sign": false
     },
-    "asar": true
+    "asar": true,
+
+    "publish": {
+      "provider": "github",
+      "owner": "anyfrees", 
+       "repo": "uptime",
+      "releaseType": "prerelease"
+                                                                   
+    }
   }
 }

@@ -1,12 +1,12 @@
 # .github/workflows/build-and-publish.yml
 
-name: Build and 拨测客户端
+name: Build and Publish 主动可用性拨测平台客户端
 
 on:
   push:
-    branches: [ main ] 
+    branches: [ main ] # 每次推送到 main 分支时构建，并上传为 artifact (用于测试)
   release:
-    types: [published] 
+    types: [published] # 当在 GitHub 上发布新的 Release 时触发构建并上传到 Release Assets
 
 jobs:
   build-and-release:
@@ -28,65 +28,77 @@ jobs:
     - name: Install dependencies (npm)
       run: npm ci 
 
-    # 新增：为 Linux 构建安装必要的依赖
     - name: Install Linux build dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y dpkg fakeroot rpm # rpmbuild 通常随 rpm 包一起安装
+        sudo apt-get install -y dpkg fakeroot rpm 
 
-    - name: Build application
+    # 构建并自动发布应用程序
+    # 当此 workflow 由 'on: release: types: [published]' 事件触发时，
+    # 并且 package.json 中配置了 "publish": {"provider": "github"},
+    # electron-builder 会自动将构建产物上传到对应的 GitHub Release 的 Assets 中。
+    - name: Build and Publish application
       id: build_app 
-      run: npm run dist 
+      run: npm run dist # 这个脚本应在 package.json 中定义为 "electron-builder"
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # CSC_LINK: ${{ secrets.CSC_LINK }} 
-        # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }} 
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 必需：用于 electron-builder 向 GitHub API 进行身份验证以上传文件
+        # 如果需要代码签名 (推荐用于正式发布):
+        # CSC_LINK: ${{ secrets.CSC_LINK }} # Windows 代码签名证书 (Base64)
+        # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }} # Windows 证书密码
+        # APPLE_ID: ${{ secrets.APPLE_ID }} # Apple ID
+        # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }} # Apple ID 应用专用密码
+        # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }} # Apple Team ID
+        # MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }} # macOS 代码签名证书 (Base64)
+        # MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }} # macOS 证书密码
 
+    # 下面的 Artifact 上传步骤主要用于非 Release 构建（例如 push 到 main 分支时）的产物存档和测试。
+    # 对于 Release 构建，electron-builder 会处理主要的附件上传。
+    # 您可以保留这些步骤作为备份，或者根据需要调整它们的条件。
     - name: Upload Windows Artifact (Installer)
-      if: matrix.os == 'windows-latest' && success()
+      if: success() && matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Windows-Installer-${{ github.sha }}
         path: dist/*Setup*.exe 
 
     - name: Upload Windows Artifact (Portable)
-      if: matrix.os == 'windows-latest' && success()
+      if: success() && matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Windows-Portable-${{ github.sha }}
         path: dist/*portable*.exe 
 
     - name: Upload macOS Artifact (DMG)
-      if: matrix.os == 'macos-latest' && success()
+      if: success() && matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
-        name: 主动可用性拨测平台客户端-macOS-${{ github.sha }}
+        name: 主动可用性拨测平台客户端-macOS-DMG-${{ github.sha }}
         path: dist/*.dmg
 
     - name: Upload macOS Artifact (ZIP)
-      if: matrix.os == 'macos-latest' && success()
+      if: success() && matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
-        name: 主动可用性拨测平台客户端-macOS-zip-${{ github.sha }}
-        path: dist/*.zip # 假设您的 mac target 也包含 zip
+        name: 主动可用性拨测平台客户端-macOS-ZIP-${{ github.sha }}
+        path: dist/*.zip 
 
     - name: Upload Linux Artifact (AppImage)
-      if: matrix.os == 'ubuntu-latest' && success()
+      if: success() && matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Linux-AppImage-${{ github.sha }}
         path: dist/*.AppImage
 
     - name: Upload Linux Artifact (deb)
-      if: matrix.os == 'ubuntu-latest' && success()
+      if: success() && matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Linux-deb-${{ github.sha }}
         path: dist/*.deb
         
     - name: Upload Linux Artifact (rpm)
-      if: matrix.os == 'ubuntu-latest' && success()
+      if: success() && matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: 主动可用性拨测平台客户端-Linux-rpm-${{ github.sha }}
