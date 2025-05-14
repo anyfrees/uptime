@@ -1,4 +1,4 @@
-// main.js - Electron 主进程 (v5 - 修复 ISO-8859-1 解码错误)
+// main.js - Electron 主进程 (v7 - 最终完整版 - 含解码修复)
 
 const { app, BrowserWindow, ipcMain, nativeTheme, Menu, Tray, dialog, shell, systemPreferences, nativeImage } = require('electron');
 const path = require('path');
@@ -45,10 +45,12 @@ let uiReady = false;
 let logQueueForUi = [];
 let appIsQuitting = false; 
 
+// --- 日志配置 ---
 log.transports.file.resolvePath = () => path.join(app.getPath('userData'), 'logs', `main-${new Date().toISOString().split('T')[0]}.log`);
 log.transports.file.level = 'info'; 
 log.transports.console.level = 'debug'; 
 
+// --- 开机自启实例 ---
 let appAutoLauncher;
 if (app.isPackaged) {
     appAutoLauncher = new AutoLaunch({
@@ -58,6 +60,7 @@ if (app.isPackaged) {
     });
 }
 
+// --- 图标辅助函数 ---
 function getAppIconPath() {
     if (settings && settings.app_icon_path && fs.existsSync(settings.app_icon_path)) {
         return settings.app_icon_path;
@@ -113,6 +116,8 @@ function updateApplicationIcons(iconPathInput) {
     }
 }
 
+
+// --- 辅助函数 (日志, 设置加载/保存等) ---
 function logMessage(message, level = 'info') {
     switch (level.toLowerCase()) {
         case 'error': log.error(message); break;
@@ -210,7 +215,7 @@ function saveSettings() {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.getTitle() !== settings.app_title) {
             mainWindow.setTitle(settings.app_title);
         }
-        if (tray && !tray.isDestroyed()) { // 修复：直接设置，不获取
+        if (tray && !tray.isDestroyed()) { 
             tray.setToolTip(settings.app_title || DEFAULT_APP_TITLE);
         }
     } catch (e) {
@@ -231,8 +236,8 @@ function loadSubscriptions() {
             last_notified_status: sub.last_notified_status || null,
             last_notification_time: sub.last_notification_time || 0.0,
             origin_url: sub.origin_url || null,
-            _fault_retry_count: sub._fault_retry_count || 0, 
-            _potential_fault_status: sub._potential_fault_status || null,
+            _fault_retry_count: 0, 
+            _potential_fault_status: null,
         }));
     } else {
         subscriptions = [];
@@ -253,43 +258,64 @@ function saveSubscriptions() {
     }
 }
 
+// --- 核心业务逻辑函数 ---
 async function decodeContentRobustly(rawBuffer, headers = {}, sourceUrlForDebug = "") {
+    logMessage(`开始解码内容 (源: ${sourceUrlForDebug})`, 'debug');
     const contentType = (headers['content-type'] || '').toLowerCase();
     let charsetFromHeader = null;
+
+    // 1. 尝试从 HTTP Header 获取字符集
     if (contentType.includes('charset=')) {
         charsetFromHeader = contentType.split('charset=')[1].split(';')[0].trim();
         if (charsetFromHeader) {
-            try { 
-                // 修正：将 ISO-8859-1 映射到 latin1
-                const nodeEncoding = charsetFromHeader.toUpperCase() === 'ISO-8859-1' ? 'latin1' : charsetFromHeader;
-                return rawBuffer.toString(nodeEncoding); 
+            const nodeEncoding = charsetFromHeader.toUpperCase() === 'ISO-8859-1' ? 'latin1' : charsetFromHeader;
+            try {
+                logMessage(`尝试使用 Header 中的字符集解码: ${charsetFromHeader} (映射为 ${nodeEncoding}) (源: ${sourceUrlForDebug})`, 'debug');
+                return rawBuffer.toString(nodeEncoding);
             } catch (e) {
-                logMessage(`使用 Header 中的字符集 ${charsetFromHeader} (尝试映射为 ${nodeEncoding}) 解码失败 (源: ${sourceUrlForDebug}): ${e.message}`, 'warn');
+                logMessage(`使用 Header 中的字符集 ${charsetFromHeader} (映射为 ${nodeEncoding}) 解码失败 (源: ${sourceUrlForDebug}): ${e.message}`, 'warn');
             }
         }
     }
+
+    // 2. 尝试使用 chardet 检测字符集
     try {
-        let detectedCharset = chardet.detect(rawBuffer); // chardet 可能返回 null 或一个数组
-        if (Array.isArray(detectedCharset)) { // 如果 chardet 返回数组，取第一个（通常是置信度最高的）
-            detectedCharset = detectedCharset.length > 0 ? detectedCharset[0] : null;
-        }
+        const detectionResult = chardet.detect(rawBuffer); 
+        let detectedEncodingName = null;
 
-        if (detectedCharset) { 
-            try { 
-                // 修正：将 ISO-8859-1 映射到 latin1
-                const nodeEncoding = detectedCharset.toUpperCase() === 'ISO-8859-1' ? 'latin1' : detectedCharset;
-                return rawBuffer.toString(nodeEncoding); 
-            } catch (e) {
-                logMessage(`使用 chardet 检测到的字符集 ${detectedCharset} (尝试映射为 ${nodeEncoding}) 解码失败 (源: ${sourceUrlForDebug}): ${e.message}`, 'warn');
+        if (detectionResult && typeof detectionResult === 'string') { 
+            detectedEncodingName = detectionResult;
+        } else if (detectionResult && typeof detectionResult === 'object' && detectionResult.encoding) { // 兼容返回对象的 chardet 库
+            detectedEncodingName = detectionResult.encoding;
+            logMessage(`Chardet (object result) 检测到编码: ${detectedEncodingName} (置信度: ${detectionResult.confidence}) (源: ${sourceUrlForDebug})`, 'debug');
+        }
+        
+        if (detectedEncodingName) {
+            logMessage(`Chardet 检测到编码: ${detectedEncodingName} (源: ${sourceUrlForDebug})`, 'debug');
+            const nodeEncoding = detectedEncodingName.toUpperCase() === 'ISO-8859-1' ? 'latin1' : detectedEncodingName;
+            try {
+                return rawBuffer.toString(nodeEncoding);
+            } catch (e_toString) {
+                logMessage(`使用 chardet 检测到的编码 '${detectedEncodingName}' (映射为 '${nodeEncoding}') 解码失败 (源: ${sourceUrlForDebug}): ${e_toString.message}`, 'warn');
             }
+        } else {
+            logMessage(`Chardet 未能检测到有效编码或返回空结果 (源: ${sourceUrlForDebug})`, 'warn');
         }
-    } catch (e) { logMessage(`Chardet 检测失败 (源: ${sourceUrlForDebug}): ${e.message}`, 'warn'); }
-
-    for (const enc of ['utf8', 'gbk', 'gb2312', 'latin1']) { // 添加 latin1 到备选列表
-        try { return rawBuffer.toString(enc); } catch (e) { /* continue */ }
+    } catch (e_chardet) {
+        logMessage(`Chardet 库在检测过程中发生错误 (源: ${sourceUrlForDebug}): ${e_chardet.message}`, 'error');
     }
-    logMessage(`所有解码尝试失败，使用默认解码 (源: ${sourceUrlForDebug})`, 'warn');
-    return rawBuffer.toString(); // Node.js 默认 utf8
+
+    // 3. 尝试常用备用编码
+    logMessage(`尝试使用常用备用编码解码 (源: ${sourceUrlForDebug})`, 'debug');
+    for (const enc of ['utf8', 'gbk', 'gb2312', 'latin1']) {
+        try {
+            return rawBuffer.toString(enc);
+        } catch (e) { /* 继续尝试下一个 */ }
+    }
+
+    // 4. 最后手段：默认解码 (通常是 UTF-8)
+    logMessage(`所有解码尝试失败，使用 Node.js 默认解码 (源: ${sourceUrlForDebug})`, 'warn');
+    return rawBuffer.toString(); 
 }
 
 function unquoteNameRobustly(nameRawStr, sourceUrlForDebug = "") {
@@ -316,23 +342,28 @@ async function fetchAndParseSubscriptionUrl(subUrl) {
         let parsedContentText = null;
         let isBase64Source = false;
 
-        if (rawBuffer.length > 20 && !rawBuffer.slice(0, 100).toString().match(/[\s\r\n\t]/)) {
+        const looksLikeBase64 = rawBuffer.length > 20 && !rawBuffer.slice(0, Math.min(100, rawBuffer.length)).toString('ascii').match(/[\s\r\n\t :,!@#$%^&*()_+\-=\[\]{};'"\\|<>\/?.]/);
+
+        if (looksLikeBase64) {
+            logMessage(`源 ${subUrl} 疑似 Base64，尝试解码...`, 'debug');
             try {
                 const base64DecodedBuffer = Buffer.from(rawBuffer.toString('ascii'), 'base64');
-                const tempDecodedText = await decodeContentRobustly(base64DecodedBuffer, response.headers, `${subUrl} (as Base64)`);
+                const tempDecodedText = await decodeContentRobustly(base64DecodedBuffer, {}, `${subUrl} (as Base64)`);
+                
                 if (tempDecodedText && (tempDecodedText.includes('://') || tempDecodedText.includes(','))) {
                     parsedContentText = tempDecodedText;
                     isBase64Source = true;
                     logMessage(`源 ${subUrl} 被识别并成功解码为 Base64。`, "info");
                 } else {
-                     logMessage(`源 ${subUrl} 疑似 Base64 但解码后内容不符合预期。`, "warn");
+                     logMessage(`源 ${subUrl} 疑似 Base64 但解码后内容不符合预期或解码失败。`, "warn");
                 }
             } catch (e) {
-                logMessage(`尝试 Base64 解码源 ${subUrl} 失败: ${e.message}`, 'warn');
+                logMessage(`尝试 Base64 解码源 ${subUrl} 时发生内部错误: ${e.message}`, 'warn');
             }
         }
 
-        if (!isBase64Source || !parsedContentText) {
+        if (!isBase64Source) { 
+            logMessage(`将源 ${subUrl} 作为普通文本处理解码...`, 'debug');
             parsedContentText = await decodeContentRobustly(rawBuffer, response.headers, subUrl);
         }
         
@@ -374,17 +405,10 @@ async function fetchAndParseSubscriptionUrl(subUrl) {
 
             if (urlVal) {
                  nodes.push({
-                    name: name,
-                    url: urlVal,
-                    raw_line: lineStr,
-                    status: "pending", 
-                    last_checked: null,
-                    previous_status: null,
-                    last_notified_status: null,
-                    last_notification_time: 0.0,
-                    origin_url: subUrl,
-                    _fault_retry_count: 0, 
-                    _potential_fault_status: null, 
+                    name: name, url: urlVal, raw_line: lineStr, status: "pending", 
+                    last_checked: null, previous_status: null, last_notified_status: null,
+                    last_notification_time: 0.0, origin_url: subUrl,
+                    _fault_retry_count: 0, _potential_fault_status: null, 
                 });
             } else {
                 logMessage(`跳过无效行: "${lineStr}" (源: ${subUrl})`, 'debug');
@@ -1156,12 +1180,19 @@ function createTray() {
 
 // --- 窗口创建 ---
 function createWindow() {
+    logMessage("准备创建主窗口...", "info");
     if (mainWindow && !mainWindow.isDestroyed()) {
+        logMessage("主窗口已存在，显示并聚焦。", "info");
         mainWindow.show();
         mainWindow.focus();
         return;
     }
     const windowIconPath = getAppIconPath(); 
+    if (!windowIconPath) {
+        logMessage("无法创建窗口：未找到有效的窗口图标路径。", "error");
+        app.quit();
+        return;
+    }
 
     mainWindow = new BrowserWindow({
         width: 1000,
@@ -1179,14 +1210,20 @@ function createWindow() {
         },
         show: false, 
     });
+    logMessage("主窗口对象已创建。", "info");
 
-    mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'));
+    mainWindow.loadFile(path.join(__dirname, 'ui', 'index.html'))
+        .then(() => { logMessage("index.html 已成功加载。", "info"); })
+        .catch(err => { logMessage(`加载 index.html 失败: ${err}`, "error"); });
 
     mainWindow.once('ready-to-show', () => {
+        logMessage("主窗口 'ready-to-show' 事件触发。", "info");
         if (settings.start_minimized && tray) { 
             logMessage("应用根据设置启动时最小化（不显示窗口）。", "info");
         } else {
+            logMessage("显示主窗口...", "info");
             mainWindow.show();
+            logMessage("主窗口已显示。", "info");
         }
         // 移除或注释掉下面这行来禁止自动打开开发者工具
         // if (!app.isPackaged) {
@@ -1195,6 +1232,7 @@ function createWindow() {
     });
 
     mainWindow.on('closed', () => {
+        logMessage("主窗口已关闭。", "info");
         mainWindow = null; 
     });
     mainWindow.on('minimize', (event) => {
@@ -1209,56 +1247,76 @@ function createWindow() {
             event.preventDefault();
             mainWindow.hide();
             logMessage("窗口已通过原生关闭按钮操作隐藏到托盘（未退出）。", "info");
+        } else {
+            logMessage("主窗口正在关闭 (appIsQuitting 或无托盘)。", "info");
         }
     });
 }
 
 // --- 应用程序生命周期 ---
-app.on('ready', () => {
+app.on('ready', async () => { 
+    logMessage("应用 'ready' 事件触发。", "info");
     logMessage(`应用程序启动于 ${new Date().toLocaleString('zh-CN')}`, "info");
     logMessage(`应用版本: ${app.getVersion()}, Electron: ${process.versions.electron}, Node: ${process.versions.node}`, "info");
     logMessage(`用户数据路径: ${app.getPath('userData')}`, "info");
     
-    loadSettings(); 
-    loadSubscriptions();
-    setupIpcHandlers();
-    
-    createWindow(); 
-    createTray();
+    try {
+        loadSettings(); 
+        loadSubscriptions();
+        setupIpcHandlers(); 
+        
+        await createWindow(); 
+        logMessage("createWindow 调用完成。", "info");
 
-    if (appAutoLauncher) {
-        appAutoLauncher.isEnabled().then((isEnabled) => {
-            if (settings.start_with_windows && !isEnabled) {
-                return appAutoLauncher.enable().catch(err => logMessage(`启用开机自启失败: ${err.message}`, 'error'));
-            } else if (!settings.start_with_windows && isEnabled) {
-                return appAutoLauncher.disable().catch(err => logMessage(`禁用开机自启失败: ${err.message}`, 'error'));
-            }
-        }).catch(err => logMessage(`检查开机自启状态失败: ${err.message}`, 'error'));
-    }
-    if (settings.app_icon_path) {
-        updateApplicationIcons(settings.app_icon_path);
+        createTray(); 
+        logMessage("createTray 调用完成。", "info");
+
+        if (appAutoLauncher) {
+            appAutoLauncher.isEnabled().then((isEnabled) => {
+                if (settings.start_with_windows && !isEnabled) {
+                    return appAutoLauncher.enable().catch(err => logMessage(`启用开机自启失败: ${err.message}`, 'error'));
+                } else if (!settings.start_with_windows && isEnabled) {
+                    return appAutoLauncher.disable().catch(err => logMessage(`禁用开机自启失败: ${err.message}`, 'error'));
+                }
+            }).catch(err => logMessage(`检查开机自启状态失败: ${err.message}`, 'error'));
+        }
+
+        if (settings.app_icon_path) {
+            updateApplicationIcons(settings.app_icon_path);
+        }
+        logMessage("应用 'ready' 事件处理完毕。", "info");
+
+    } catch (error) {
+        logMessage(`应用 'ready' 事件处理中发生严重错误: ${error.message}\n${error.stack}`, "error");
+        app.quit(); 
     }
 });
 
 app.on('window-all-closed', () => {
+    logMessage("事件 'window-all-closed' 触发。", "info");
     if (process.platform !== 'darwin') {
-        logMessage("所有窗口已关闭。", "debug");
+        // logMessage("非 macOS 平台，所有窗口关闭，通常应用会退出（除非被托盘逻辑阻止）。", "debug");
+        // app.quit(); // 通常不在这里退出，因为托盘应用期望保持运行
     }
 });
 
 app.on('activate', () => {
+    logMessage("事件 'activate' 触发 (macOS)。", "info");
     if (BrowserWindow.getAllWindows().length === 0) {
         if (!mainWindow || mainWindow.isDestroyed()) {
+            logMessage("'activate': 没有窗口，重新创建主窗口。", "info");
             createWindow();
         }
     }
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+        logMessage("'activate': 主窗口存在但不可见，正在显示。", "info");
         mainWindow.show();
         mainWindow.focus();
     }
 });
 
 app.on('before-quit', (event) => {
+    logMessage("事件 'before-quit' 触发。", "info");
     if (!appIsQuitting) appIsQuitting = true; 
     logMessage("应用关闭流程启动 (before-quit)...", "info");
     stopSchedulers();
@@ -1268,6 +1326,7 @@ app.on('before-quit', (event) => {
     if (tray && !tray.isDestroyed()) {
         tray.destroy();
         tray = null;
+        logMessage("托盘图标已销毁。", "info");
     }
     logMessage(`应用程序主线程即将退出。关闭时间: ${new Date().toLocaleString('zh-CN')}`, "info");
 });

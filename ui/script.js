@@ -48,6 +48,10 @@ let quitAppButtonSidebarElem;
 // 关于页面元素
 let appVersionInfoSpan, electronVersionInfoSpan, nodeVersionInfoSpan, emailLink, blogLink;
 
+// 自定义确认框元素
+let confirmModalOverlay, confirmModalMessage, confirmModalOkBtn, confirmModalCancelBtn, customConfirmTitle;
+let confirmCallback = null;
+
 
 function generateSafeDomIdFromString(inputStr) {
     if (typeof inputStr !== 'string') {
@@ -134,6 +138,13 @@ function assignElements() {
     emailLink = document.getElementById('emailLink'); 
     blogLink = document.getElementById('blogLink');   
 
+    // 自定义确认框元素
+    confirmModalOverlay = document.getElementById('customConfirmModalOverlay');
+    customConfirmTitle = document.getElementById('customConfirmTitle');
+    confirmModalMessage = document.getElementById('customConfirmMessage');
+    confirmModalOkBtn = document.getElementById('customConfirmOkBtn');
+    confirmModalCancelBtn = document.getElementById('customConfirmCancelBtn');
+
     console.log("JS: DOM elements assigned.");
 }
 
@@ -190,11 +201,11 @@ function updateAppLogoDisplay(iconPath) {
 }
 
 async function loadAndDisplayAppVersionInfo() {
-    console.log("JS: loadAndDisplayAppVersionInfo CALLED for view:", currentView); // 增加日志
-    if (currentView === 'about') { 
+    console.log("JS: loadAndDisplayAppVersionInfo CALLED for view:", currentView); 
+    if (currentView === 'about' && views.about && !views.about.classList.contains('hidden')) { 
         try {
             const versions = await window.electronAPI.getAppVersionInfo();
-            console.log("JS: Versions received from main process:", versions); // 增加日志
+            console.log("JS: Versions received from main process:", versions); 
             if (versions) {
                 if (appVersionInfoSpan) appVersionInfoSpan.textContent = versions.app || 'N/A';
                 if (electronVersionInfoSpan) electronVersionInfoSpan.textContent = versions.electron || 'N/A';
@@ -211,6 +222,8 @@ async function loadAndDisplayAppVersionInfo() {
             if (electronVersionInfoSpan) electronVersionInfoSpan.textContent = '错误';
             if (nodeVersionInfoSpan) nodeVersionInfoSpan.textContent = '错误';
         }
+    } else {
+        console.log("JS: Not on 'about' view or 'about' view is hidden, skipping version info load.");
     }
 }
 
@@ -388,10 +401,17 @@ function addLogEntryToUi(logEntry) {
         entryDiv.classList.add('text-gray-300'); 
     }
 
-    logContainer.appendChild(entryDiv);
-    if (logContainer.scrollHeight - logContainer.scrollTop <= logContainer.clientHeight + 50) { 
-        logContainer.scrollTop = logContainer.scrollHeight;
+    // 修改：将新日志条目插入到顶部
+    if (logContainer.firstChild) {
+        logContainer.insertBefore(entryDiv, logContainer.firstChild);
+    } else {
+        logContainer.appendChild(entryDiv);
     }
+
+    // 可选：如果希望在添加新日志时自动滚动到顶部 (仅当用户未向上滚动时)
+    // if (logContainer.scrollTop < 50) { // 50px 阈值，表示用户在顶部附近
+    //     logContainer.scrollTop = 0;
+    // }
 }
 
 function updateDashboardStats(subscriptionsData) {
@@ -444,19 +464,21 @@ function renderSubscriptionSourcesList(sourceUrlsData) {
         deleteBtn.dataset.url = url;
 
         deleteBtn.addEventListener('click', async () => {
-            if (confirm(`确定要移除订阅源 ${url} 吗？这将同时移除该源提供的所有节点。`)) {
-                try {
-                    const result = await window.electronAPI.removeSubscriptionSourceUrl(url);
-                    if (result.success) {
-                        showToast(result.message, 'success');
-                        renderSubscriptionSourcesList(result.subscription_sources); 
-                        renderSubscriptionList(result.subscriptions); 
-                    } else { showToast(result.message, 'error'); }
-                } catch (error) {
-                    console.error("JS: Error removing subscription source:", error);
-                    showToast('移除订阅源时发生错误。', 'error');
+            showCustomConfirm(`确定要移除订阅源 ${url} 吗？这将同时移除该源提供的所有节点。`, async (confirmed) => {
+                if (confirmed) {
+                    try {
+                        const result = await window.electronAPI.removeSubscriptionSourceUrl(url);
+                        if (result.success) {
+                            showToast(result.message, 'success');
+                            renderSubscriptionSourcesList(result.subscription_sources); 
+                            renderSubscriptionList(result.subscriptions); 
+                        } else { showToast(result.message, 'error'); }
+                    } catch (error) {
+                        console.error("JS: Error removing subscription source:", error);
+                        showToast('移除订阅源时发生错误。', 'error');
+                    }
                 }
-            }
+            });
         });
         itemDiv.appendChild(urlSpan);
         itemDiv.appendChild(deleteBtn);
@@ -635,26 +657,28 @@ async function handleDeleteWebhook() {
         showToast('无法找到要删除的 Webhook 配置。', 'error');
         return;
     }
-
-    if (confirm(`确定要删除 Webhook "${webhookToDelete.name}" 吗？此操作无法撤销。`)) {
-        try {
-            const result = await window.electronAPI.removeWebhookConfig(selectedWebhookId);
-            if (result.success) {
-                showToast(result.message, 'success');
-                currentWebhookConfigs = result.all_configs || [];
-                selectedWebhookId = null; 
-                isWebhookEditMode = false;
-                renderWebhookConfigsList(currentWebhookConfigs);
-                resetWebhookForm(); 
-                showWebhookDetailPlaceholder(true);
-            } else {
-                showToast(result.message, 'error');
+    
+    showCustomConfirm(`确定要删除 Webhook "${webhookToDelete.name}" 吗？此操作无法撤销。`, async (confirmed) => {
+        if (confirmed) {
+            try {
+                const result = await window.electronAPI.removeWebhookConfig(selectedWebhookId);
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    currentWebhookConfigs = result.all_configs || [];
+                    selectedWebhookId = null; 
+                    isWebhookEditMode = false;
+                    renderWebhookConfigsList(currentWebhookConfigs);
+                    resetWebhookForm(); 
+                    showWebhookDetailPlaceholder(true);
+                } else {
+                    showToast(result.message, 'error');
+                }
+            } catch (error) {
+                console.error("JS: Error deleting webhook:", error);
+                showToast('删除 Webhook 时发生错误。', 'error');
             }
-        } catch (error) {
-            console.error("JS: Error deleting webhook:", error);
-            showToast('删除 Webhook 时发生错误。', 'error');
         }
-    }
+    });
 }
 
 async function handleTestWebhook() {
@@ -718,6 +742,50 @@ async function handleSaveGeneralSettings() {
     }
 }
 
+function setupCustomConfirmModal() {
+    // DOM元素已在 assignElements 中获取
+    if (confirmModalOkBtn) {
+        confirmModalOkBtn.addEventListener('click', () => {
+            if (confirmCallback) confirmCallback(true);
+            hideCustomConfirm();
+        });
+    }
+    if (confirmModalCancelBtn) {
+        confirmModalCancelBtn.addEventListener('click', () => {
+            if (confirmCallback) confirmCallback(false);
+            hideCustomConfirm();
+        });
+    }
+    if (confirmModalOverlay) {
+        confirmModalOverlay.addEventListener('click', (event) => {
+            if (event.target === confirmModalOverlay) { 
+                if (confirmCallback) confirmCallback(false);
+                hideCustomConfirm();
+            }
+        });
+    }
+}
+
+function showCustomConfirm(message, callback, title = "请确认") { // 增加 title 参数
+    if (!confirmModalOverlay || !confirmModalMessage || !customConfirmTitle) {
+        console.error("Custom confirm modal elements not found. Falling back to native confirm.");
+        if (callback) callback(confirm(message)); 
+        return;
+    }
+    customConfirmTitle.textContent = title; // 设置标题
+    confirmModalMessage.textContent = message;
+    confirmCallback = callback; 
+    confirmModalOverlay.classList.add('active');
+}
+
+function hideCustomConfirm() {
+    if (confirmModalOverlay) {
+        confirmModalOverlay.classList.remove('active');
+    }
+    confirmCallback = null; 
+}
+
+
 function attachAllEventListeners() {
     console.log("JS: Attaching all event listeners...");
     Object.keys(navLinks).forEach(key => {
@@ -726,7 +794,7 @@ function attachAllEventListeners() {
             if (key === 'about') {
                 linkElement.addEventListener('click', (e) => {
                     e.preventDefault();
-                    console.log("JS: 'About' navigation link clicked."); // 调试日志
+                    console.log("JS: 'About' navigation link clicked."); 
                     switchView(key);
                 });
             } else {
@@ -795,13 +863,15 @@ function attachAllEventListeners() {
             if (!url) { showToast('无法获取节点URL。', 'error'); return; }
 
             if (targetButton.classList.contains('remove-node-btn')) {
-                if (confirm(`确定要移除节点 ${url} 吗?`)) {
-                    try {
-                        const result = await window.electronAPI.removeSubscription(url);
-                        showToast(result.message, result.success ? 'success' : 'error');
-                        if (result.success) renderSubscriptionList(result.subscriptions);
-                    } catch (error) { console.error("JS: Error removing subscription:", error); showToast('移除订阅时发生错误。', 'error'); }
-                }
+                showCustomConfirm(`确定要移除节点 ${url} 吗?`, async (confirmed) => {
+                    if (confirmed) {
+                        try {
+                            const result = await window.electronAPI.removeSubscription(url);
+                            showToast(result.message, result.success ? 'success' : 'error');
+                            if (result.success) renderSubscriptionList(result.subscriptions);
+                        } catch (error) { console.error("JS: Error removing subscription:", error); showToast('移除订阅时发生错误。', 'error'); }
+                    }
+                });
             } else if (targetButton.classList.contains('check-node-btn')) {
                 try {
                     showToast(`正在检查节点 ${url}...`, 'info');
@@ -835,7 +905,6 @@ function attachAllEventListeners() {
                 clearTimeout(logoClickTimeout); logoClickCount = 0;
                 console.log("JS: Logo triple-clicked. Requesting new icon selection.");
                 try {
-                    // 确保 electronAPI 和 selectAppIcon 方法存在
                     if (window.electronAPI && typeof window.electronAPI.selectAppIcon === 'function') {
                         const newIconPath = await window.electronAPI.selectAppIcon(); 
                         if (newIconPath) {
@@ -866,9 +935,11 @@ function attachAllEventListeners() {
 
     if (quitAppButtonSidebarElem) {
         quitAppButtonSidebarElem.addEventListener('click', () => {
-            if (confirm('确定要退出应用吗? 这将关闭整个程序。')) {
-                window.electronAPI.quitApplication().catch(err => showToast('请求退出应用时出错: ' + err, 'error'));
-            }
+            showCustomConfirm('确定要退出应用吗? 这将关闭整个程序。', (confirmed) => {
+                if (confirmed) {
+                    window.electronAPI.quitApplication().catch(err => showToast('请求退出应用时出错: ' + err, 'error'));
+                }
+            }, '退出应用'); // 自定义确认框标题
         });
     }
 
@@ -884,7 +955,7 @@ function attachAllEventListeners() {
     }
     if (webhookForm) webhookForm.addEventListener('submit', handleWebhookFormSubmit);
     if (webhookTypeSelect) webhookTypeSelect.addEventListener('change', toggleCustomPayloadVisibility);
-    if (webhookDeleteButton) webhookDeleteButton.addEventListener('click', handleDeleteWebhook);
+    if (webhookDeleteButton) webhookDeleteButton.addEventListener('click', handleDeleteWebhook); 
     if (webhookTestButton) webhookTestButton.addEventListener('click', handleTestWebhook);
 
     if (saveGeneralSettingsButton) {
@@ -954,6 +1025,7 @@ async function initializeApp() {
     try {
         console.log("JS: Initializing app with electronAPI...");
         assignElements(); 
+        setupCustomConfirmModal(); 
         showWebhookDetailPlaceholder(true); 
 
         const uiReadyResponse = await window.electronAPI.signalUiReady();
@@ -974,7 +1046,10 @@ async function initializeApp() {
             renderWebhookConfigsList(currentWebhookConfigs);
 
             if (initialData.logs && Array.isArray(initialData.logs)) {
-                initialData.logs.forEach(log => addLogEntryToUi(log));
+                // 修改：倒序加载初始日志
+                for (let i = initialData.logs.length - 1; i >= 0; i--) {
+                    addLogEntryToUi(initialData.logs[i]);
+                }
             }
             updateDashboardStats(currentSubscriptions);
         } else {
